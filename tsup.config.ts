@@ -6,6 +6,7 @@ export default defineConfig({
     "video/index": "src/video/index.ts",
   },
   format: ["esm"],
+  target: "es2022",
   dts: true,
   sourcemap: true,
   clean: true,
