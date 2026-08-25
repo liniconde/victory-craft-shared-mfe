@@ -11,20 +11,32 @@
 
 export const FOCUS_SPAN_SECONDS = 90;
 const FOCUS_TRACK_PERCENT = 55;
+/** How many multiples of the current selection width the lens keeps as
+ * padding around it, when that's wider than FOCUS_SPAN_SECONDS — a caller
+ * with no max clip length (a plain "trim this range" selector, as opposed
+ * to a capped highlight) can have a selection much wider than 90s, and a
+ * fixed-width lens centered on it would no longer contain both handles. */
+const FOCUS_SPAN_SELECTION_MULTIPLIER = 3;
 
 export interface LensWindow {
   focusStart: number;
   focusEnd: number;
 }
 
-export const computeLensWindow = (duration: number, start: number, end: number): LensWindow => {
-  if (duration <= FOCUS_SPAN_SECONDS) {
+export const computeLensWindow = (
+  duration: number,
+  start: number,
+  end: number,
+  focusSpanSeconds: number = FOCUS_SPAN_SECONDS,
+): LensWindow => {
+  const span = Math.max(focusSpanSeconds, (end - start) * FOCUS_SPAN_SELECTION_MULTIPLIER);
+  if (duration <= span) {
     return { focusStart: 0, focusEnd: duration };
   }
 
   const center = (start + end) / 2;
-  let focusStart = center - FOCUS_SPAN_SECONDS / 2;
-  let focusEnd = center + FOCUS_SPAN_SECONDS / 2;
+  let focusStart = center - span / 2;
+  let focusEnd = center + span / 2;
 
   if (focusStart < 0) {
     focusEnd += -focusStart;
