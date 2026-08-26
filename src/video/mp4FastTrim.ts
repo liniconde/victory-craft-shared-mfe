@@ -607,8 +607,32 @@ const extractFragments = async (
   return { initSegment: initSegmentation.buffer, fragmentsByTrack };
 };
 
-const validateOutput = (blob: Blob, expectedDurationSeconds: number): Promise<void> =>
+/**
+ * Verifies the fast-path output actually plays back correctly — normally a
+ * genuine safety net (catches real muxing bugs), but it can't tell "this
+ * device can't decode this codec at all" apart from "this file is broken":
+ * both surface as the same `<video>` error event. Android's WebView (used
+ * by PWA-wrapped installs, e.g. via PWABuilder) commonly has no HEVC
+ * decoder — hardware support is device-dependent and Chromium ships no
+ * software fallback for licensing reasons — while the *exact same* output
+ * decodes fine on a desktop browser with HEVC support, since the fast path
+ * never re-encodes: the output carries the source's original codec
+ * unchanged. Failing the whole fast path (and paying for a real-time
+ * re-encode fallback instead) over a device limitation we already know
+ * about, for a file whose container structure we built ourselves from
+ * verified sample-table math, is the wrong trade — so `canPlayType()` is
+ * checked *first*: only if this device claims it CAN play the codec do we
+ * hold the decode check to its normal strict standard; if it can't, we
+ * skip straight to trusting the container-level correctness instead.
+ */
+const validateOutput = (blob: Blob, expectedDurationSeconds: number, videoCodec: string | undefined): Promise<void> =>
   new Promise((resolve, reject) => {
+    const probe = document.createElement("video");
+    if (videoCodec && !probe.canPlayType(`video/mp4; codecs="${videoCodec}"`)) {
+      resolve();
+      return;
+    }
+
     const url = URL.createObjectURL(blob);
     const video = document.createElement("video");
     video.preload = "metadata";
@@ -705,7 +729,7 @@ export const trimMp4Fast = async (
     }
 
     const outputBlob = new Blob(parts, { type: "video/mp4" });
-    await validateOutput(outputBlob, playableDurationSeconds);
+    await validateOutput(outputBlob, playableDurationSeconds, videoTrack.codec);
 
     const baseName = sourceFile.name.replace(/\.[^.]+$/, "").replace(/\s+/g, "-") || "video-clip";
     return new File([outputBlob], `${baseName}-clip.mp4`, { type: "video/mp4", lastModified: Date.now() });
