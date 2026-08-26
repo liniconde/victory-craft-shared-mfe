@@ -189,3 +189,231 @@
   font-size: 0.9rem;
   line-height: 1.45;
 }
+
+/* ==========================================================================
+   ClipPlayer — a single, always-custom-controls video player. The frame is
+   intentionally hard-cornered (it's the "instrument"); everything floating
+   on top of it (the control pill, buttons, thumb) keeps soft, rounded
+   shapes. Uses the recruiters-* brand tokens when the host app defines
+   them, with literal fallbacks so it still looks right standalone (e.g.
+   inside videos-mfe, which doesn't load recruiters-mfe's token sheet).
+   ========================================================================== */
+
+.vc-clip-player {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, #002c17 0%, #0d4429 100%);
+}
+
+.vc-clip-player.is-expanded-fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+}
+
+.vc-clip-player__stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+}
+
+.vc-clip-player.is-portrait .vc-clip-player__stage {
+  aspect-ratio: 9 / 16;
+  max-height: 80vh;
+  margin: 0 auto;
+}
+
+.vc-clip-player.is-expanded-fallback .vc-clip-player__stage {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  max-height: none;
+}
+
+.vc-clip-player__video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  object-fit: contain;
+}
+
+.vc-clip-player__tap-veil {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.vc-clip-player__center-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3.4rem;
+  height: 3.4rem;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 20, 15, 0.55);
+  color: #f7fbfc;
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.vc-clip-player__center-play svg {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+.vc-clip-player.is-playing .vc-clip-player__center-play,
+.vc-clip-player.is-buffering .vc-clip-player__center-play {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.85);
+}
+
+.vc-clip-player__buffer-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: rgba(0, 20, 12, 0.4);
+  pointer-events: none;
+}
+
+.vc-clip-player.is-buffering .vc-clip-player__buffer-overlay {
+  display: flex;
+}
+
+.vc-clip-player__spinner {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 999px;
+  border: 3px solid rgba(255, 255, 255, 0.22);
+  border-top-color: var(--recruiters-gold, #e9c176);
+  animation: vc-clip-player-spin 0.85s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vc-clip-player__spinner {
+    animation: none;
+    opacity: 0.9;
+  }
+}
+
+@keyframes vc-clip-player-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.vc-clip-player__buffer-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f7fbfc;
+  opacity: 0.85;
+}
+
+.vc-clip-player__controls {
+  position: absolute;
+  left: 0.65rem;
+  right: 0.65rem;
+  bottom: 0.65rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.55rem 0.45rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(4, 20, 15, 0.74);
+  backdrop-filter: blur(6px);
+}
+
+.vc-clip-player__play-btn,
+.vc-clip-player__icon-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #f7fbfc;
+  cursor: pointer;
+}
+
+.vc-clip-player__play-btn {
+  background: var(--recruiters-accent, #4f9a6b);
+}
+
+.vc-clip-player__play-btn:focus-visible,
+.vc-clip-player__icon-btn:focus-visible,
+.vc-clip-player__track:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--recruiters-gold, #e9c176) 55%, transparent);
+}
+
+.vc-clip-player__play-btn svg,
+.vc-clip-player__icon-btn svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.vc-clip-player__track {
+  position: relative;
+  flex: 1;
+  height: 1.1rem;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.vc-clip-player__track-base {
+  position: relative;
+  width: 100%;
+  height: 0.32rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.vc-clip-player__track-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: var(--recruiters-gold, #e9c176);
+}
+
+.vc-clip-player__track-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  background: #f7fbfc;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+}
+
+.vc-clip-player__time {
+  flex-shrink: 0;
+  color: #f7fbfc;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  min-width: 4.6rem;
+  text-align: right;
+}
