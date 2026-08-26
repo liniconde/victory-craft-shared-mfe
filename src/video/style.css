@@ -244,6 +244,11 @@
   background: transparent;
   cursor: pointer;
   padding: 0;
+  /* This button covers the entire stage, so the browser's default mobile
+     tap-highlight (which some Android WebViews tint using the page's
+     <meta name="theme-color">) would otherwise flash a solid color wash
+     across the whole video on every tap. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 .vc-clip-player__center-play {
@@ -348,6 +353,7 @@
   background: transparent;
   color: #f7fbfc;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .vc-clip-player__play-btn {
@@ -375,6 +381,7 @@
   align-items: center;
   cursor: pointer;
   touch-action: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .vc-clip-player__track-base {
