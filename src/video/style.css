@@ -357,14 +357,19 @@
 }
 
 .vc-clip-player__play-btn {
-  background: var(--recruiters-accent, #4f9a6b);
+  background: var(--recruiters-gold, #e9c176);
+  color: var(--recruiters-forest, #002c17);
 }
 
-.vc-clip-player__play-btn:focus-visible,
 .vc-clip-player__icon-btn:focus-visible,
 .vc-clip-player__track:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--recruiters-gold, #e9c176) 55%, transparent);
+}
+
+.vc-clip-player__play-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(247, 251, 252, 0.75);
 }
 
 .vc-clip-player__play-btn svg,
