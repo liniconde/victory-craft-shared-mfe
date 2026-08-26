@@ -251,6 +251,20 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Host apps ship their own generic `button` / `button:hover` resets (e.g.
+   victory-craft-front's App.css sets `button:hover { background-color:
+   var(--theme-button-primary-bg) }`). A bare `button:hover` outranks a
+   single-class selector on specificity, so on touch devices — where a tap
+   leaves the element in a "stuck" :hover state until something else is
+   tapped — that host rule was painting a solid brand-color wash over the
+   whole tap-veil (and would do the same to the other controls) until the
+   viewer tapped elsewhere. Re-asserting the same background on :hover/
+   :active here matches specificity and wins on cascade order instead. */
+.vc-clip-player__tap-veil:hover,
+.vc-clip-player__tap-veil:active {
+  background: transparent;
+}
+
 .vc-clip-player__center-play {
   position: absolute;
   top: 50%;
@@ -359,6 +373,19 @@
 .vc-clip-player__play-btn {
   background: var(--recruiters-gold, #e9c176);
   color: var(--recruiters-forest, #002c17);
+}
+
+/* See the matching comment on .vc-clip-player__tap-veil above: beats a host
+   app's generic `button:hover` reset, which otherwise wins on specificity
+   and can leave a stuck hover color on touch devices. */
+.vc-clip-player__icon-btn:hover,
+.vc-clip-player__icon-btn:active {
+  background: transparent;
+}
+
+.vc-clip-player__play-btn:hover,
+.vc-clip-player__play-btn:active {
+  background: var(--recruiters-gold, #e9c176);
 }
 
 .vc-clip-player__icon-btn:focus-visible,
