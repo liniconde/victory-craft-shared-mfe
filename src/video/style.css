@@ -352,6 +352,23 @@
   border-radius: 999px;
   background: rgba(4, 20, 15, 0.74);
   backdrop-filter: blur(6px);
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+/* Auto-hidden after a beat of playback (see ClipPlayer.tsx) — kept in the
+   DOM so state (progress, mute) isn't lost, just faded out and taken out
+   of hit-testing so taps fall through to the tap-veil underneath instead
+   of an invisible button. */
+.vc-clip-player.is-controls-hidden .vc-clip-player__controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vc-clip-player__controls {
+    transition: none;
+  }
 }
 
 .vc-clip-player__play-btn,

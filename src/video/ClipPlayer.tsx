@@ -30,6 +30,7 @@ export interface ClipPlayerProps {
 }
 
 const SEEK_STEP_SECONDS = 5;
+const AUTO_HIDE_DELAY_MS = 1000;
 
 const formatSeconds = (value: number) => {
   const safe = Math.max(0, Math.round(value));
@@ -71,6 +72,8 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
   const [elapsed, setElapsed] = useState(0);
   const [trimMetadataFitsFile, setTrimMetadataFitsFile] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
+  const [controlsHidden, setControlsHidden] = useState(false);
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hasTrimMetadataProps =
     typeof clipDurationSeconds === "number" && Number.isFinite(clipDurationSeconds) && clipDurationSeconds > 0;
@@ -87,7 +90,38 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
     setRealDuration(0);
     setElapsed(0);
     setTrimMetadataFitsFile(true);
+    setControlsHidden(false);
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
   }, [src]);
+
+  useEffect(() => () => {
+    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+  }, []);
+
+  // Mirrors what "el reproductor normal" does: once playback starts, the
+  // control bar auto-hides after a beat so it doesn't cover the video, and
+  // only comes back when the viewer presses play again or taps the video —
+  // never on hover, so touch and mouse behave the same way.
+  const clearHideTimer = () => {
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+  };
+  const scheduleAutoHide = () => {
+    clearHideTimer();
+    hideTimeoutRef.current = setTimeout(() => setControlsHidden(true), AUTO_HIDE_DELAY_MS);
+  };
+  const revealControls = () => {
+    clearHideTimer();
+    setControlsHidden(false);
+    if (videoRef.current && !videoRef.current.paused) {
+      scheduleAutoHide();
+    }
+  };
 
   const detectAndEmitOrientation = (video: HTMLVideoElement) => {
     const { videoWidth, videoHeight } = video;
@@ -133,8 +167,13 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
         video.currentTime = clipStart;
       }
       setIsPlaying(true);
+      scheduleAutoHide();
     };
-    const handlePause = () => setIsPlaying(false);
+    const handlePause = () => {
+      setIsPlaying(false);
+      clearHideTimer();
+      setControlsHidden(false);
+    };
     const handleWaiting = () => setIsBuffering(true);
     const handlePlaying = () => setIsBuffering(false);
     const handleCanPlay = () => setIsBuffering(false);
@@ -244,6 +283,7 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
         isPlaying ? "is-playing" : "",
         isBuffering ? "is-buffering" : "",
         isExpandedFallback ? "is-expanded-fallback" : "",
+        controlsHidden ? "is-controls-hidden" : "",
         className || "",
       ]
         .filter(Boolean)
@@ -283,7 +323,13 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
         <button
           type="button"
           className="vc-clip-player__tap-veil"
-          onClick={togglePlayback}
+          onClick={() => {
+            if (controlsHidden) {
+              revealControls();
+            } else {
+              togglePlayback();
+            }
+          }}
           aria-label={isPlaying ? "Pausar" : "Reproducir"}
         />
 
