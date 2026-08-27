@@ -2,7 +2,7 @@ export { default as HighlightRangeSelector } from "./HighlightRangeSelector";
 export type { HighlightRangeSelectorProps, HighlightRangeSelectorLabels } from "./HighlightRangeSelector";
 
 export { default as ClipPlayer } from "./ClipPlayer";
-export type { ClipPlayerProps } from "./ClipPlayer";
+export type { ClipPlayerProps, ClipPlayerPlaybackMode } from "./ClipPlayer";
 
 export {
   canCaptureVideoStreamInBrowser,

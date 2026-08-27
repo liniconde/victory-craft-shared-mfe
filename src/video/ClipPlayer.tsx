@@ -1,6 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { FiMaximize, FiMinimize, FiPause, FiPlay, FiVolume2, FiVolumeX } from "react-icons/fi";
 
+/** Feed-style virtualized lists (e.g. a swipeable rankings feed) mount many
+ * players at once but only want one actually playing at a time. Mirrors
+ * RecruiterVideoPlaybackMode's shape so callers can pass that straight
+ * through without a translation layer, without this package depending on
+ * the app's own type. */
+export type ClipPlayerPlaybackMode = "active" | "preload" | "idle" | "off";
+
 export interface ClipPlayerProps {
   src: string;
   className?: string;
@@ -10,6 +17,18 @@ export interface ClipPlayerProps {
   loop?: boolean;
   preload?: "none" | "metadata" | "auto";
   controls?: boolean;
+  /** "default" shows play/pause, the scrub track, the time label, mute, and
+   * fullscreen. "feed" drops the scrub track and time label — just
+   * play/pause, mute, and fullscreen — for dense swipeable feeds where a
+   * full transport bar is more chrome than the card has room for. */
+  variant?: "default" | "feed";
+  /** Pause immediately regardless of autoPlay — for a feed item that's been
+   * scrolled out of the active slot. Defaults to true (always eligible). */
+  isActive?: boolean;
+  /** See ClipPlayerPlaybackMode — "off" pauses like isActive=false;
+   * "preload" mounts the element (so it's ready to play instantly once
+   * active) without ever calling play(), even if autoPlay is set. */
+  playbackMode?: ClipPlayerPlaybackMode;
   loadingLabel?: string;
   /**
    * A clip produced by the fast, no-re-encode trim path keeps the source
@@ -52,6 +71,9 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
   loop = false,
   preload = "metadata",
   controls = true,
+  variant = "default",
+  isActive = true,
+  playbackMode = "active",
   loadingLabel = "Cargando…",
   trimStartSeconds,
   clipDurationSeconds,
@@ -134,12 +156,20 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !autoPlay) return;
+    if (!video) return;
+
+    if (playbackMode === "off" || !isActive) {
+      video.pause();
+      return;
+    }
+
+    if (playbackMode === "preload" || !autoPlay) return;
+
     const playPromise = video.play();
     if (playPromise && typeof playPromise.catch === "function") {
       playPromise.catch(() => undefined);
     }
-  }, [autoPlay, src]);
+  }, [autoPlay, isActive, playbackMode, src]);
 
   // Bounds playback to [clipStart, clipEnd] and keeps the displayed elapsed
   // time zero-based, whether that window comes from real trim metadata or
@@ -199,9 +229,20 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
   }, [clipStart, clipEnd, windowDuration, loop]);
 
   useEffect(() => {
-    const onFullscreenChange = () => setIsFullscreen(document.fullscreenElement === containerRef.current);
+    const video = videoRef.current;
+    const onFullscreenChange = () => setIsFullscreen(document.fullscreenElement === videoRef.current);
+    // iOS Safari never sets document.fullscreenElement for a <video>'s own
+    // native fullscreen — it only fires these two events instead.
+    const onWebkitBegin = () => setIsFullscreen(true);
+    const onWebkitEnd = () => setIsFullscreen(false);
     document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+    video?.addEventListener("webkitbeginfullscreen", onWebkitBegin);
+    video?.addEventListener("webkitendfullscreen", onWebkitEnd);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      video?.removeEventListener("webkitbeginfullscreen", onWebkitBegin);
+      video?.removeEventListener("webkitendfullscreen", onWebkitEnd);
+    };
   }, []);
 
   const togglePlayback = () => {
@@ -258,15 +299,37 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
     setIsMuted(video.muted);
   };
 
+  // Fullscreens the <video> element itself rather than our wrapper div, so
+  // the browser treats it exactly like a native player: on Android Chrome
+  // and desktop that means real orientation-aware fullscreen presentation
+  // for a landscape clip "for free" (no ScreenOrientation.lock hack needed);
+  // on iOS Safari — which doesn't support the Fullscreen API on arbitrary
+  // elements at all — the <video> element's own webkitEnterFullscreen entry
+  // point is what makes fullscreen work there in the first place. Our
+  // custom overlay buttons live outside the video element, so they can't be
+  // reached once it's fullscreened — the video's native controls take over
+  // for the duration (see the `controls={isFullscreen}` prop below).
   const toggleFullscreen = () => {
-    const container = containerRef.current;
-    if (!container) return;
-    if (document.fullscreenElement === container) {
+    const video = videoRef.current as
+      | (HTMLVideoElement & {
+          webkitEnterFullscreen?: () => void;
+          webkitExitFullscreen?: () => void;
+          webkitDisplayingFullscreen?: boolean;
+        })
+      | null;
+    if (!video) return;
+    if (document.fullscreenElement === video) {
       void document.exitFullscreen().catch(() => undefined);
       return;
     }
-    if (container.requestFullscreen) {
-      container.requestFullscreen().catch(() => setIsExpandedFallback((prev) => !prev));
+    if (video.webkitDisplayingFullscreen) {
+      video.webkitExitFullscreen?.();
+      return;
+    }
+    if (video.requestFullscreen) {
+      void video.requestFullscreen().catch(() => setIsExpandedFallback((prev) => !prev));
+    } else if (video.webkitEnterFullscreen) {
+      video.webkitEnterFullscreen();
     } else {
       setIsExpandedFallback((prev) => !prev);
     }
@@ -300,7 +363,7 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
           loop={loop && !hasTrimMetadataProps}
           playsInline
           preload={preload}
-          controls={false}
+          controls={isFullscreen}
           onLoadedMetadata={(event) => {
             const video = event.currentTarget;
             detectAndEmitOrientation(video);
@@ -353,30 +416,39 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
               {isPlaying ? <FiPause aria-hidden="true" /> : <FiPlay aria-hidden="true" />}
             </button>
 
-            <div
-              className="vc-clip-player__track"
-              ref={trackRef}
-              role="slider"
-              tabIndex={0}
-              aria-label="Progreso del video"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(progressPercent)}
-              onPointerDown={handleTrackPointerDown}
-              onPointerMove={handleTrackPointerMove}
-              onPointerUp={handleTrackPointerUp}
-              onPointerCancel={handleTrackPointerUp}
-              onKeyDown={handleTrackKeyDown}
-            >
-              <div className="vc-clip-player__track-base">
-                <div className="vc-clip-player__track-fill" style={{ width: `${progressPercent}%` }} />
-                <div className="vc-clip-player__track-thumb" style={{ left: `${progressPercent}%` }} />
-              </div>
-            </div>
+            {variant === "default" ? (
+              <>
+                <div
+                  className="vc-clip-player__track"
+                  ref={trackRef}
+                  role="slider"
+                  tabIndex={0}
+                  aria-label="Progreso del video"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(progressPercent)}
+                  onPointerDown={handleTrackPointerDown}
+                  onPointerMove={handleTrackPointerMove}
+                  onPointerUp={handleTrackPointerUp}
+                  onPointerCancel={handleTrackPointerUp}
+                  onKeyDown={handleTrackKeyDown}
+                >
+                  <div className="vc-clip-player__track-base">
+                    <div className="vc-clip-player__track-fill" style={{ width: `${progressPercent}%` }} />
+                    <div className="vc-clip-player__track-thumb" style={{ left: `${progressPercent}%` }} />
+                  </div>
+                </div>
 
-            <span className="vc-clip-player__time">
-              {formatSeconds(elapsed)} / {formatSeconds(windowDuration)}
-            </span>
+                <span className="vc-clip-player__time">
+                  {formatSeconds(elapsed)} / {formatSeconds(windowDuration)}
+                </span>
+              </>
+            ) : (
+              // "feed" variant: no scrub track, so the play button needs its
+              // own room to breathe instead of hugging the mute/fullscreen
+              // buttons on the other end of a mostly-empty bar.
+              <div className="vc-clip-player__controls-spacer" />
+            )}
 
             <button
               type="button"

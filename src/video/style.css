@@ -202,6 +202,7 @@
 .vc-clip-player {
   position: relative;
   overflow: hidden;
+  width: 100%;
   background: linear-gradient(180deg, #002c17 0%, #0d4429 100%);
 }
 
@@ -472,4 +473,8 @@
   letter-spacing: 0.01em;
   min-width: 4.6rem;
   text-align: right;
+}
+
+.vc-clip-player__controls-spacer {
+  flex: 1;
 }
