@@ -351,8 +351,7 @@
   gap: 0.55rem;
   padding: 0.45rem 0.55rem 0.45rem 0.45rem;
   border-radius: 999px;
-  background: rgba(4, 20, 15, 0.74);
-  backdrop-filter: blur(6px);
+  background: transparent;
   opacity: 1;
   transition: opacity 0.2s ease;
 }
