@@ -230,14 +230,7 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
 
   useEffect(() => {
     const video = videoRef.current;
-    const onFullscreenChange = () => {
-      const stillFullscreen = document.fullscreenElement === videoRef.current;
-      setIsFullscreen(stillFullscreen);
-      // Covers exiting via the OS back gesture/button, not just our own
-      // fullscreen button — either way the orientation lock (if any) must
-      // not outlive the fullscreen session.
-      if (!stillFullscreen) screen.orientation?.unlock?.();
-    };
+    const onFullscreenChange = () => setIsFullscreen(document.fullscreenElement === videoRef.current);
     // iOS Safari never sets document.fullscreenElement for a <video>'s own
     // native fullscreen — it only fires these two events instead.
     const onWebkitBegin = () => setIsFullscreen(true);
@@ -309,25 +302,13 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
   // Fullscreens the <video> element itself rather than our wrapper div, so
   // the browser treats it exactly like a native player: on Android Chrome
   // and desktop that means real orientation-aware fullscreen presentation
-  // for a landscape clip "for free" in a regular browser tab; on iOS
-  // Safari — which doesn't support the Fullscreen API on arbitrary
+  // for a landscape clip "for free" (no ScreenOrientation.lock hack needed);
+  // on iOS Safari — which doesn't support the Fullscreen API on arbitrary
   // elements at all — the <video> element's own webkitEnterFullscreen entry
   // point is what makes fullscreen work there in the first place. Our
   // custom overlay buttons live outside the video element, so they can't be
   // reached once it's fullscreened — the video's native controls take over
   // for the duration (see the `controls={isFullscreen}` prop below).
-  //
-  // Installed as a PWA (e.g. packaged via PWABuilder), the host app window
-  // is locked to the manifest's `orientation` field — "portrait-primary"
-  // for this app, so the rest of the UI stays fixed — and that OS-level
-  // lock can suppress the browser's usual fullscreen-video auto-rotate.
-  // ScreenOrientation.lock() is the documented escape hatch: it's only
-  // allowed to override the manifest's declared orientation while the
-  // document is in fullscreen, so calling it here affects nothing outside
-  // this fullscreen session. Non-standard and missing from TS's DOM lib
-  // (cast through unknown), and a no-op on iOS Safari, which doesn't
-  // implement the Orientation Lock API at all — same limitation any
-  // fullscreen UI runs into there, not specific to this player.
   const toggleFullscreen = () => {
     const video = videoRef.current as
       | (HTMLVideoElement & {
@@ -338,7 +319,6 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
       | null;
     if (!video) return;
     if (document.fullscreenElement === video) {
-      screen.orientation?.unlock?.();
       void document.exitFullscreen().catch(() => undefined);
       return;
     }
@@ -347,17 +327,7 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
       return;
     }
     if (video.requestFullscreen) {
-      void video
-        .requestFullscreen()
-        .then(() => {
-          if (orientation === "landscape") {
-            const lockableOrientation = screen.orientation as unknown as {
-              lock?: (orientation: string) => Promise<void>;
-            };
-            lockableOrientation.lock?.("landscape")?.catch(() => undefined);
-          }
-        })
-        .catch(() => setIsExpandedFallback((prev) => !prev));
+      void video.requestFullscreen().catch(() => setIsExpandedFallback((prev) => !prev));
     } else if (video.webkitEnterFullscreen) {
       video.webkitEnterFullscreen();
     } else {
