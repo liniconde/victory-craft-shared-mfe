@@ -306,7 +306,10 @@
   pointer-events: none;
 }
 
-.vc-clip-player.is-buffering .vc-clip-player__buffer-overlay {
+/* :not(.is-error) keeps the buffer spinner and the error overlay mutually
+   exclusive — a failed load also flips isBuffering back to false, but this
+   guards against any edge case where both classes are briefly true at once. */
+.vc-clip-player.is-buffering:not(.is-error) .vc-clip-player__buffer-overlay {
   display: flex;
 }
 
@@ -339,6 +342,64 @@
   text-transform: uppercase;
   color: #f7fbfc;
   opacity: 0.85;
+}
+
+.vc-clip-player__error-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  background: rgba(0, 20, 12, 0.72);
+  text-align: center;
+}
+
+.vc-clip-player.is-error .vc-clip-player__error-overlay {
+  display: flex;
+}
+
+.vc-clip-player__error-icon {
+  width: 2rem;
+  height: 2rem;
+  color: var(--recruiters-gold, #e9c176);
+}
+
+.vc-clip-player__error-label {
+  max-width: 22rem;
+  color: #f7fbfc;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  opacity: 0.92;
+}
+
+.vc-clip-player__error-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem 0.95rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--recruiters-gold, #e9c176);
+  color: var(--recruiters-forest, #002c17);
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vc-clip-player__error-retry-btn:hover,
+.vc-clip-player__error-retry-btn:active {
+  background: var(--recruiters-gold, #e9c176);
+}
+
+.vc-clip-player__error-retry-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(247, 251, 252, 0.75);
 }
 
 .vc-clip-player__controls {

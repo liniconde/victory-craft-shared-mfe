@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { FiMaximize, FiMinimize, FiPause, FiPlay, FiVolume2, FiVolumeX } from "react-icons/fi";
+import { FiAlertTriangle, FiMaximize, FiMinimize, FiPause, FiPlay, FiVolume2, FiVolumeX } from "react-icons/fi";
 
 /** Feed-style virtualized lists (e.g. a swipeable rankings feed) mount many
  * players at once but only want one actually playing at a time. Mirrors
@@ -30,6 +30,22 @@ export interface ClipPlayerProps {
    * active) without ever calling play(), even if autoPlay is set. */
   playbackMode?: ClipPlayerPlaybackMode;
   loadingLabel?: string;
+  /** Shown in the error overlay when the native <video> element fails to
+   * load its src (403/404, CORS block, expired presigned URL, unsupported
+   * codec, ...). Defaults to a generic Spanish message since ClipPlayer has
+   * no way to know *why* it failed. */
+  errorLabel?: string;
+  /** Label for the retry button inside the error overlay. */
+  retryLabel?: string;
+  /** Called when the native <video> element fires its `error` event, i.e.
+   * the src failed to load for any reason. ClipPlayer itself only knows how
+   * to retry loading the *same* src (via the retry button, which calls
+   * video.load()) — it has no notion of signed-URL mechanics. This callback
+   * lets a host app react to the failure however it needs to, e.g.
+   * re-fetching a fresh signed URL and passing a new src down. Optional and
+   * best-effort: ClipPlayer's own error UI works whether or not this is
+   * provided. */
+  onPlaybackError?: () => void;
   /**
    * A clip produced by the fast, no-re-encode trim path keeps the source
    * file's original (non-zero-based) timestamps. When both are provided AND
@@ -75,6 +91,9 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
   isActive = true,
   playbackMode = "active",
   loadingLabel = "Cargando…",
+  errorLabel = "No se pudo cargar el video",
+  retryLabel = "Reintentar",
+  onPlaybackError,
   trimStartSeconds,
   clipDurationSeconds,
   onOrientationChange,
@@ -87,6 +106,7 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("landscape");
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
+  const [hasError, setHasError] = useState(false);
   const [isMuted, setIsMuted] = useState(muted);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExpandedFallback, setIsExpandedFallback] = useState(false);
@@ -109,6 +129,7 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
     setOrientation("landscape");
     setIsPlaying(false);
     setIsBuffering(true);
+    setHasError(false);
     setRealDuration(0);
     setElapsed(0);
     setTrimMetadataFitsFile(true);
@@ -247,7 +268,7 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
 
   const togglePlayback = () => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || hasError) return;
     if (video.paused || video.ended) {
       void video.play().catch(() => undefined);
     } else {
@@ -345,6 +366,7 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
         `is-${orientation}`,
         isPlaying ? "is-playing" : "",
         isBuffering ? "is-buffering" : "",
+        hasError ? "is-error" : "",
         isExpandedFallback ? "is-expanded-fallback" : "",
         controlsHidden ? "is-controls-hidden" : "",
         className || "",
@@ -381,6 +403,11 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
             detectAndEmitOrientation(event.currentTarget);
           }}
           onCanPlay={() => setIsBuffering(false)}
+          onError={() => {
+            setHasError(true);
+            setIsBuffering(false);
+            onPlaybackError?.();
+          }}
         />
 
         <button
@@ -403,6 +430,23 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
         <div className="vc-clip-player__buffer-overlay">
           <span className="vc-clip-player__spinner" aria-hidden="true" />
           <span className="vc-clip-player__buffer-label">{loadingLabel}</span>
+        </div>
+
+        <div className="vc-clip-player__error-overlay">
+          <FiAlertTriangle className="vc-clip-player__error-icon" aria-hidden="true" />
+          <span className="vc-clip-player__error-label">{errorLabel}</span>
+          <button
+            type="button"
+            className="vc-clip-player__error-retry-btn"
+            onClick={() => {
+              const video = videoRef.current;
+              setHasError(false);
+              setIsBuffering(true);
+              video?.load();
+            }}
+          >
+            {retryLabel}
+          </button>
         </div>
 
         {controls ? (
