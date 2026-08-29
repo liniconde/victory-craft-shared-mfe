@@ -28,3 +28,31 @@ export { captureClipInBrowser } from "./browserCapture";
 export { Mp4FastTrimUnavailableError, trimMp4Fast } from "./mp4FastTrim";
 export { trimVideoFile, VideoTooLargeForBrowserProcessingError } from "./trimVideoFile";
 export type { TrimMethod, TrimVideoFileOptions } from "./trimVideoFile";
+
+export { default as VideoClipRangeSelector } from "./VideoClipRangeSelector";
+export type { VideoClipRangeSelectorProps, VideoClipRangeSelectorLabels } from "./VideoClipRangeSelector";
+
+export {
+  MIN_CLIP_DURATION_SECONDS,
+  createDefaultSelection,
+  createSelectionFromRange,
+  isFullVideoSelection,
+  readVideoMetadata,
+} from "./videoClipUpload";
+export type { PreparedVideoClip } from "./videoClipUpload";
+
+export { useLocalVideoClipUpload, DEFAULT_MAX_VIDEO_SIZE_BYTES } from "./useLocalVideoClipUpload";
+export type { LocalVideoClipFileError, UseLocalVideoClipUploadOptions } from "./useLocalVideoClipUpload";
+
+export { uploadFileMultipart, MULTIPART_UPLOAD_THRESHOLD_BYTES } from "./multipartUpload";
+export type {
+  HttpClient,
+  MultipartInitResponse,
+  MultipartPartUrl,
+  MultipartUploadedPart,
+  MultipartUploadParams,
+  MultipartUploadResult,
+} from "./multipartUpload";
+
+export { uploadVideoFile } from "./uploadVideoFile";
+export type { UploadVideoFileOptions, UploadVideoFileResult } from "./uploadVideoFile";

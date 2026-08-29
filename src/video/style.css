@@ -191,6 +191,198 @@
 }
 
 /* ==========================================================================
+   VideoClipRangeSelector — same visual language as vc-highlight-trim above,
+   used by the "trim a long video before upload, no max length" flow instead
+   of the capped highlight-extraction one. Uses the browser's native <video
+   controls> instead of a custom play button, and adds a `__meta-compact`
+   single-line summary for mobile.
+   ========================================================================== */
+
+.vc-video-clip-range {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid rgba(13, 68, 41, 0.14);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 92% 8%, rgba(80, 187, 115, 0.13), transparent 32%),
+    linear-gradient(180deg, #f8fbf9, #edf5f0);
+}
+
+.vc-video-clip-range__header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.vc-video-clip-range__icon {
+  display: inline-grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  border: 1px solid rgba(80, 187, 115, 0.38);
+  border-radius: 50%;
+  background: rgba(13, 68, 41, 0.08);
+  color: var(--recruiters-forest-soft, #0d4429);
+}
+
+.vc-video-clip-range__header span {
+  display: block;
+  color: #65776e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vc-video-clip-range__header strong {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--recruiters-text, #17303a);
+  font-size: 0.98rem;
+}
+
+.vc-video-clip-range__preview {
+  width: 100%;
+  max-height: 280px;
+  border-radius: 8px;
+  background: #061910;
+  object-fit: contain;
+}
+
+.vc-video-clip-range__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.vc-video-clip-range__meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.1rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid rgba(13, 68, 41, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #24483a;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.vc-video-clip-range__meta-compact {
+  margin: 0;
+  color: #24483a;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.vc-video-clip-range__track {
+  position: relative;
+  height: 3.75rem;
+  touch-action: none;
+}
+
+.vc-video-clip-range__track-base {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 6px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: rgba(13, 68, 41, 0.14);
+}
+
+.vc-video-clip-range__lens-wash {
+  position: absolute;
+  top: 0.15rem;
+  bottom: 0.15rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--recruiters-accent, #50bb73) 10%, transparent);
+  pointer-events: none;
+}
+
+.vc-video-clip-range__track-fill {
+  position: absolute;
+  top: 50%;
+  height: 6px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: var(--recruiters-accent, #50bb73);
+}
+
+/* Two lanes — start above the track, end below — so the handles never
+   overlap even when the selection is a sliver of a long video. */
+.vc-video-clip-range__handle {
+  position: absolute;
+  top: 50%;
+  width: 0.55rem;
+  height: 1.5rem;
+  transform: translate(-50%, calc(-50% - 0.85rem));
+  border-radius: 0.3rem;
+  background: var(--recruiters-accent, #50bb73);
+  border: 2px solid #ffffff;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--recruiters-forest-soft, #0d4429) 35%, transparent),
+    0 2px 6px color-mix(in srgb, var(--recruiters-forest-soft, #0d4429) 28%, transparent);
+  cursor: grab;
+  touch-action: none;
+}
+
+.vc-video-clip-range__handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 0.6rem;
+  transform: translate(-50%, -50%);
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.vc-video-clip-range__handle--end {
+  background: var(--recruiters-gold, #e9c176);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--recruiters-gold-deep, #c59b4c) 45%, transparent),
+    0 2px 6px color-mix(in srgb, var(--recruiters-forest-soft, #0d4429) 28%, transparent);
+  transform: translate(-50%, calc(-50% + 0.85rem));
+}
+
+.vc-video-clip-range__handle:active {
+  cursor: grabbing;
+}
+
+.vc-video-clip-range__handle:focus-visible {
+  outline: 2px solid var(--recruiters-forest-soft, #0d4429);
+  outline-offset: 2px;
+}
+
+.vc-video-clip-range__track.is-disabled .vc-video-clip-range__handle {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.vc-video-clip-range__hint {
+  margin: 0;
+  color: #5f6f67;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .vc-video-clip-range {
+    padding: 0.85rem;
+  }
+
+  .vc-video-clip-range__preview {
+    max-height: 12rem;
+  }
+}
+
+/* ==========================================================================
    ClipPlayer — a single, always-custom-controls video player. The frame is
    intentionally hard-cornered (it's the "instrument"); everything floating
    on top of it (the control pill, buttons, thumb) keeps soft, rounded
