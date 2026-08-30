@@ -37,6 +37,14 @@ export interface ClipPlayerProps {
   errorLabel?: string;
   /** Label for the retry button inside the error overlay. */
   retryLabel?: string;
+  /**
+   * How long to wait for the browser to report metadata before treating the
+   * load as failed. A `<video>` that never gets there does NOT fire `error`
+   * — it just sits at readyState 0 / networkState 2 (NETWORK_LOADING) with a
+   * spinner over it forever, which is what a viewer sees as "CARGANDO…" and
+   * 0:00 / 0:00 with no way out. Set to 0 to disable the timeout.
+   */
+  loadTimeoutMs?: number;
   /** Called when the native <video> element fires its `error` event, i.e.
    * the src failed to load for any reason. ClipPlayer itself only knows how
    * to retry loading the *same* src (via the retry button, which calls
@@ -93,6 +101,7 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
   loadingLabel = "Cargando…",
   errorLabel = "No se pudo cargar el video",
   retryLabel = "Reintentar",
+  loadTimeoutMs = 20000,
   onPlaybackError,
   trimStartSeconds,
   clipDurationSeconds,
@@ -115,6 +124,7 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
   const [trimMetadataFitsFile, setTrimMetadataFitsFile] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
   const [controlsHidden, setControlsHidden] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hasTrimMetadataProps =
@@ -139,6 +149,22 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
       hideTimeoutRef.current = null;
     }
   }, [src]);
+
+  // Nothing else surfaces a load that never finishes: the element reports no
+  // error, so without this the buffer overlay stays up indefinitely. Skipped
+  // for preload="none", where staying at readyState 0 until the viewer presses
+  // play is the correct, expected state rather than a failure.
+  useEffect(() => {
+    if (!src || hasError || loadTimeoutMs <= 0 || preload === "none") return;
+    const timeoutId = setTimeout(() => {
+      const video = videoRef.current;
+      if (video && video.readyState >= 1) return; // metadata arrived in time
+      setHasError(true);
+      setIsBuffering(false);
+      onPlaybackError?.();
+    }, loadTimeoutMs);
+    return () => clearTimeout(timeoutId);
+  }, [src, loadAttempt, hasError, loadTimeoutMs, preload, onPlaybackError]);
 
   useEffect(() => () => {
     if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
@@ -442,6 +468,7 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({
               const video = videoRef.current;
               setHasError(false);
               setIsBuffering(true);
+              setLoadAttempt((attempt) => attempt + 1);
               video?.load();
             }}
           >

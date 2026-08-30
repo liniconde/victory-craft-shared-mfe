@@ -506,6 +506,172 @@ interface TrackSegmentState {
  * Returns the single combined init segment plus each track's fragment
  * buffers, in the order they must be concatenated.
  */
+/**
+ * Reads a fragment's own start time: `moof` > `traf` > `tfhd` (track_ID) +
+ * `tfdt` (baseMediaDecodeTime, in that track's timescale). Returns null for
+ * anything it cannot make sense of, so a fragment we fail to read falls back
+ * to its original position rather than being dropped.
+ */
+const readFragmentTiming = (
+  buffer: ArrayBuffer,
+): { trackId: number; baseMediaDecodeTime: number } | null => {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  const boxTypeAt = (offset: number) =>
+    String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
+
+  // A segment may be prefixed by `styp`/`free` before the `moof`.
+  let offset = 0;
+  while (offset + 8 <= view.byteLength && boxTypeAt(offset) !== "moof") {
+    const size = view.getUint32(offset);
+    if (size < 8) return null;
+    offset += size;
+  }
+  if (offset + 8 > view.byteLength) return null;
+
+  const moofEnd = Math.min(view.byteLength, offset + view.getUint32(offset));
+  let trafOffset = offset + 8;
+  while (trafOffset + 8 <= moofEnd) {
+    const trafSize = view.getUint32(trafOffset);
+    if (trafSize < 8) return null;
+    if (boxTypeAt(trafOffset) === "traf") {
+      const trafEnd = Math.min(moofEnd, trafOffset + trafSize);
+      let childOffset = trafOffset + 8;
+      let trackId: number | null = null;
+      let baseMediaDecodeTime: number | null = null;
+      while (childOffset + 8 <= trafEnd) {
+        const childSize = view.getUint32(childOffset);
+        if (childSize < 8) return null;
+        const childType = boxTypeAt(childOffset);
+        if (childType === "tfhd") trackId = view.getUint32(childOffset + 12);
+        if (childType === "tfdt") {
+          baseMediaDecodeTime =
+            bytes[childOffset + 8] === 0
+              ? view.getUint32(childOffset + 12)
+              : Number(view.getBigUint64(childOffset + 12));
+        }
+        childOffset += childSize;
+      }
+      if (trackId !== null && baseMediaDecodeTime !== null) return { trackId, baseMediaDecodeTime };
+    }
+    trafOffset += trafSize;
+  }
+  return null;
+};
+
+/**
+ * Orders every track's fragments into one timeline-ordered sequence.
+ *
+ * Concatenating them track by track instead — all of the video, then all of
+ * the audio — produces a file that is technically well-formed and plays, but
+ * whose audio for t=0 sits at the very end. A browser streaming it over HTTP
+ * then has to reach both ends of the file at once, which it does with
+ * open-ended range requests that it restarts on every seek: measured on a
+ * 259.7 MB two-track clip, 55 requests announcing 7.4 GB, and on a 628.9 MB
+ * one served from S3, 130 requests announcing 42.5 GB and ~60 s before
+ * `<video>` even reported its duration. The cost scales with file size, which
+ * is why short clips never showed it — and why single-track (video-only)
+ * output never showed it either, there being nothing to interleave.
+ */
+const interleaveFragmentsByTime = (
+  ranges: TrackRange[],
+  fragmentsByTrack: Map<number, ArrayBuffer[]>,
+  timescaleByTrack: Map<number, number>,
+): { startSeconds: number; trackId: number | null; buffer: ArrayBuffer }[] => {
+  const ordered: {
+    startSeconds: number;
+    sequence: number;
+    trackId: number | null;
+    buffer: ArrayBuffer;
+  }[] = [];
+  let sequence = 0;
+  for (const range of ranges) {
+    for (const buffer of fragmentsByTrack.get(range.trackId) ?? []) {
+      const timing = readFragmentTiming(buffer);
+      const timescale = timing ? timescaleByTrack.get(timing.trackId) ?? 0 : 0;
+      // Unreadable timing sorts last but keeps its relative order, which is
+      // exactly the previous behaviour for that fragment.
+      const startSeconds =
+        timing && timescale > 0 ? timing.baseMediaDecodeTime / timescale : Number.POSITIVE_INFINITY;
+      ordered.push({ startSeconds, sequence: sequence++, trackId: timing?.trackId ?? null, buffer });
+    }
+  }
+  ordered.sort((a, b) => a.startSeconds - b.startSeconds || a.sequence - b.sequence);
+  return ordered.map(({ startSeconds, trackId, buffer }) => ({ startSeconds, trackId, buffer }));
+};
+
+/**
+ * Builds the `sidx` (segment index) that goes between the init segment and
+ * the first fragment.
+ *
+ * Interleaving alone is not enough. Without an index a browser has to
+ * discover the timeline by walking the file `moof` by `moof`, and it does
+ * that with a fresh open-ended range request per hop — dozens of extra
+ * round trips, each paying full request latency against S3. That is what
+ * turned a 628.9 MB clip into ~60 s of "CARGANDO…": the cost is the number
+ * of round trips, not the bytes. `sidx` hands the demuxer every subsegment's
+ * size and duration up front, so it can locate any point directly.
+ *
+ * One subsegment per primary-track (video) fragment; each track's fragments
+ * for that span ride along inside it.
+ */
+const buildSidxBox = (
+  groups: { sizeBytes: number; startSeconds: number }[],
+  timescale: number,
+  referenceId: number,
+  clipEndSeconds: number,
+): ArrayBuffer => {
+  const REFERENCE_BYTES = 12;
+  const HEADER_BYTES = 32; // size+type+version/flags+refID+timescale+ept+first_offset+reserved+count
+  const buffer = new ArrayBuffer(HEADER_BYTES + groups.length * REFERENCE_BYTES);
+  const view = new DataView(buffer);
+  const asTicks = (seconds: number) => Math.max(0, Math.round(seconds * timescale));
+
+  view.setUint32(0, buffer.byteLength);
+  view.setUint8(4, 0x73); // 's'
+  view.setUint8(5, 0x69); // 'i'
+  view.setUint8(6, 0x64); // 'd'
+  view.setUint8(7, 0x78); // 'x'
+  view.setUint32(8, 0); // version 0, flags 0 -> 32-bit time fields
+  view.setUint32(12, referenceId);
+  view.setUint32(16, timescale);
+  view.setUint32(20, asTicks(groups[0]?.startSeconds ?? 0)); // earliest_presentation_time
+  view.setUint32(24, 0); // first_offset: the first subsegment follows immediately
+  view.setUint16(28, 0); // reserved
+  view.setUint16(30, groups.length); // reference_count
+
+  groups.forEach((group, index) => {
+    const offset = HEADER_BYTES + index * REFERENCE_BYTES;
+    const nextStart = groups[index + 1]?.startSeconds ?? clipEndSeconds;
+    const durationTicks = Math.max(1, asTicks(nextStart) - asTicks(group.startSeconds));
+    // reference_type 0 (media, not another index) in the top bit, then size.
+    view.setUint32(offset, group.sizeBytes & 0x7fffffff);
+    view.setUint32(offset + 4, durationTicks);
+    // starts_with_SAP = 1, SAP_type = 1: every subsegment opens on a keyframe
+    // (segmentation runs with rapAlignement).
+    view.setUint32(offset + 8, 0x90000000);
+  });
+
+  return buffer;
+};
+
+/** Groups interleaved fragments into one subsegment per primary-track fragment. */
+const groupIntoSubsegments = (
+  fragments: { startSeconds: number; trackId: number | null; buffer: ArrayBuffer }[],
+  primaryTrackId: number,
+): { sizeBytes: number; startSeconds: number }[] => {
+  const groups: { sizeBytes: number; startSeconds: number }[] = [];
+  for (const fragment of fragments) {
+    const startsNewGroup = fragment.trackId === primaryTrackId || groups.length === 0;
+    if (startsNewGroup) {
+      groups.push({ sizeBytes: fragment.buffer.byteLength, startSeconds: fragment.startSeconds });
+    } else {
+      groups[groups.length - 1].sizeBytes += fragment.buffer.byteLength;
+    }
+  }
+  return groups;
+};
+
 const extractFragments = async (
   file: File,
   isoFile: ISOFile,
@@ -723,10 +889,22 @@ export const trimMp4Fast = async (
       info.timescale,
     );
 
-    const parts: BlobPart[] = [initSegment];
-    for (const range of ranges) {
-      for (const buffer of fragmentsByTrack.get(range.trackId) ?? []) parts.push(buffer);
-    }
+    const timescaleByTrack = new Map<number, number>([[videoTrack.id, videoTrack.timescale]]);
+    if (audioTrack) timescaleByTrack.set(audioTrack.id, audioTrack.timescale);
+
+    const orderedFragments = interleaveFragmentsByTime(ranges, fragmentsByTrack, timescaleByTrack);
+    const subsegments = groupIntoSubsegments(orderedFragments, videoTrack.id);
+    const sidx = buildSidxBox(
+      subsegments,
+      videoTrack.timescale,
+      videoTrack.id,
+      playableDurationSeconds,
+    );
+    const parts: BlobPart[] = [
+      initSegment,
+      sidx,
+      ...orderedFragments.map((fragment) => fragment.buffer),
+    ];
 
     const outputBlob = new Blob(parts, { type: "video/mp4" });
     await validateOutput(outputBlob, playableDurationSeconds, videoTrack.codec);
