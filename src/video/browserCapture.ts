@@ -43,6 +43,15 @@ const getSupportedRecorderMimeType = () => {
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || "";
 };
 
+// captureStream() records at the source video's native resolution, and
+// MediaRecorder defaults to an unbounded encoder bitrate — a 720p source
+// stays modest either way, but a 1080p/4K source would inherit that same
+// resolution uncapped, unlike the byte-size guards elsewhere in this package
+// (BROWSER_CAPTURE_MAX_BYTES_*) which only bound the SOURCE file being read,
+// not this recorded output. 4 Mbps keeps even a ~30s clip under ~15MB
+// regardless of source resolution.
+const RECORDED_CLIP_VIDEO_BITS_PER_SECOND = 4_000_000;
+
 /**
  * Trims a local video File by playing it back in real time and re-encoding
  * the played segment with MediaRecorder. Works on essentially any format the
@@ -96,7 +105,10 @@ export const captureClipInBrowser = async (
     if (!stream) throw new Error("Video capture stream is not available.");
 
     const mimeType = getSupportedRecorderMimeType();
-    const mediaRecorder = (recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined));
+    const mediaRecorder = (recorder = new MediaRecorder(stream, {
+      ...(mimeType ? { mimeType } : undefined),
+      videoBitsPerSecond: RECORDED_CLIP_VIDEO_BITS_PER_SECOND,
+    }));
     const chunks: BlobPart[] = [];
 
     const finished = new Promise<Blob>((resolve, reject) => {
