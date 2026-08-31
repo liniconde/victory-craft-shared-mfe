@@ -52,6 +52,18 @@ const getSupportedRecorderMimeType = () => {
 // regardless of source resolution.
 const RECORDED_CLIP_VIDEO_BITS_PER_SECOND = 4_000_000;
 
+// The tick loop below already had an absolute deadline (maxWaitMs), which
+// does prevent a true infinite hang, but a genuinely slow-but-still-
+// progressing capture (a long source over a mediocre connection) can still
+// get killed early by that fixed multiplier, and the loop had no listener
+// for the video's own "error" event, so a hard playback failure mid-capture
+// was invisible until the deadline finally fired. Stall detection (no
+// progress for N seconds) replaces the fixed deadline with a
+// still-recovers-from-a-slow-but-working-connection check, matching the
+// equivalent fix applied to the recruiters app's own local copy of this
+// real-time capture logic (recordVideoHighlightFromUrl).
+const CAPTURE_STALL_TIMEOUT_MS = 15000;
+
 /**
  * Trims a local video File by playing it back in real time and re-encoding
  * the played segment with MediaRecorder. Works on essentially any format the
@@ -132,33 +144,59 @@ export const captureClipInBrowser = async (
     });
 
     mediaRecorder.start(250);
-    await video.play();
 
     // Safety net: if playback stalls (browser throttling, a backgrounded
-    // tab pausing rAF/currentTime, a device silently refusing to advance)
-    // fail clearly instead of hanging on "preparing clip" forever.
-    const maxWaitMs = Math.max(20000, clipDurationSeconds * 1000 * 2.5);
-    await new Promise<void>((resolve, reject) => {
-      const stopAt = trimEndSeconds;
-      const startedAt = trimStartSeconds;
-      const totalSeconds = Math.max(0.001, stopAt - startedAt);
-      const timeoutId = window.setTimeout(() => {
-        reject(new Error("Timed out generating the video clip."));
-      }, maxWaitMs);
-      const tick = () => {
-        options?.onProgress?.(
-          Math.min(99, Math.max(0, Math.round(((video.currentTime - startedAt) / totalSeconds) * 100))),
-        );
-        if (video.currentTime >= stopAt || video.ended) {
-          window.clearTimeout(timeoutId);
-          options?.onProgress?.(100);
-          resolve();
-          return;
-        }
-        window.requestAnimationFrame(tick);
-      };
-      tick();
+    // tab pausing rAF/currentTime, a stream that goes silent mid-capture) or
+    // the video errors out, fail clearly instead of hanging on "preparing
+    // clip" forever.
+    let rejectCapture: ((reason: unknown) => void) | null = null;
+    const captureFailure = new Promise<never>((_, reject) => {
+      rejectCapture = reject;
     });
+    const fail = (reason: unknown) => {
+      if (mediaRecorder.state !== "inactive") mediaRecorder.stop();
+      rejectCapture?.(reason);
+    };
+    const handleVideoError = () => fail(new Error("Video failed while recording clip."));
+    video.addEventListener("error", handleVideoError);
+
+    try {
+      await Promise.race([video.play(), captureFailure]);
+
+      let lastAdvanceAt = performance.now();
+      let lastCurrentTime = video.currentTime;
+
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          const stopAt = trimEndSeconds;
+          const startedAt = trimStartSeconds;
+          const totalSeconds = Math.max(0.001, stopAt - startedAt);
+          const tick = () => {
+            const now = performance.now();
+            if (video.currentTime > lastCurrentTime) {
+              lastCurrentTime = video.currentTime;
+              lastAdvanceAt = now;
+            } else if (now - lastAdvanceAt > CAPTURE_STALL_TIMEOUT_MS) {
+              fail(new Error("Video stalled while recording clip."));
+              return;
+            }
+            options?.onProgress?.(
+              Math.min(99, Math.max(0, Math.round(((video.currentTime - startedAt) / totalSeconds) * 100))),
+            );
+            if (video.currentTime >= stopAt || video.ended) {
+              options?.onProgress?.(100);
+              resolve();
+              return;
+            }
+            window.requestAnimationFrame(tick);
+          };
+          tick();
+        }),
+        captureFailure,
+      ]);
+    } finally {
+      video.removeEventListener("error", handleVideoError);
+    }
 
     video.pause();
     if (mediaRecorder.state !== "inactive") mediaRecorder.stop();
